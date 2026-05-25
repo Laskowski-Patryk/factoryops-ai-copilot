@@ -9,17 +9,28 @@ SOP_DOCS = [
     {
         "id": "SOP-QA-014",
         "title": "Sensor Fault Escalation",
-        "body": "Repeated photoeye or proximity sensor faults require inspection, cleaning, bracket alignment, calibration check, and maintenance escalation after the third stop in one shift.",
+        "body": (
+            "Repeated photoeye or proximity sensor faults require inspection, cleaning, "
+            "bracket alignment, calibration check, and maintenance escalation after the "
+            "third stop in one shift."
+        ),
     },
     {
         "id": "SOP-MAINT-022",
         "title": "Conveyor Cell Recovery",
-        "body": "For recurring conveyor cell downtime, verify sensor cabling, validate PLC event timestamps, inspect guarding vibration, then run a controlled restart with QA sign-off.",
+        "body": (
+            "For recurring conveyor cell downtime, verify sensor cabling, validate PLC "
+            "event timestamps, inspect guarding vibration, then run a controlled restart "
+            "with QA sign-off."
+        ),
     },
     {
         "id": "SOP-OPS-008",
         "title": "Shift Handover Report",
-        "body": "Shift reports must include target versus actual output, top loss categories, open actions, ticket references, and owner commitments for the next shift.",
+        "body": (
+            "Shift reports must include target versus actual output, top loss categories, "
+            "open actions, ticket references, and owner commitments for the next shift."
+        ),
     },
 ]
 
@@ -118,7 +129,10 @@ def get_downtime(line: str, day: str) -> list[DowntimeEvent]:
 
 def compare_performance(line: str, day: str, days_back: int = 7) -> dict:
     base = date.fromisoformat(day)
-    history = [get_kpis(line, (base - timedelta(days=offset)).isoformat()) for offset in range(1, days_back + 1)]
+    history = [
+        get_kpis(line, (base - timedelta(days=offset)).isoformat())
+        for offset in range(1, days_back + 1)
+    ]
     current = get_kpis(line, day)
     avg_actual = round(sum(item.actual_units for item in history) / len(history), 1)
     avg_oee = round(sum(item.oee for item in history) / len(history), 3)
