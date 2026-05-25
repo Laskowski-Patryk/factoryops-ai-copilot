@@ -1,0 +1,36 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    app_name: str = "FactoryOps AI Copilot"
+    environment: str = "local"
+    llm_provider: str = Field(default="mock", validation_alias="LLM_PROVIDER")
+    openai_api_key: str | None = Field(default=None, validation_alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-4o-mini", validation_alias="OPENAI_MODEL")
+    openrouter_api_key: str | None = Field(default=None, validation_alias="OPENROUTER_API_KEY")
+    openrouter_model: str = Field(
+        default="openai/gpt-4o-mini", validation_alias="OPENROUTER_MODEL"
+    )
+    database_path: str = Field(default="data/factoryops.sqlite3", validation_alias="DATABASE_PATH")
+    runs_jsonl_path: str = Field(default="data/runs.jsonl", validation_alias="RUNS_JSONL_PATH")
+    cors_origins: str = Field(default="http://localhost:5173", validation_alias="CORS_ORIGINS")
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def masked_provider_config(self) -> dict[str, str | bool]:
+        return {
+            "provider": self.llm_provider,
+            "openai_configured": bool(self.openai_api_key),
+            "openai_model": self.openai_model,
+            "openrouter_configured": bool(self.openrouter_api_key),
+            "openrouter_model": self.openrouter_model,
+        }
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
