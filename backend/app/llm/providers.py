@@ -57,7 +57,7 @@ class OpenAICompatibleProvider(BaseProvider):
     def __init__(self, name: str, model: str, api_key: str, base_url: str | None = None) -> None:
         self.name = name
         self.model = model
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=25.0)
 
     def complete(self, prompt: str, context: dict[str, Any]) -> LLMResponse:
         started = perf_counter()

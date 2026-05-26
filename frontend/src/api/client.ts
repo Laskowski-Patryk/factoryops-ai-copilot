@@ -30,6 +30,9 @@ export async function createRun(prompt: string, session: ProviderSession): Promi
       model: session.provider === "mock" ? undefined : session.model
     })
   });
-  if (!response.ok) throw new Error("run failed");
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Run failed with HTTP ${response.status}`);
+  }
   return response.json();
 }

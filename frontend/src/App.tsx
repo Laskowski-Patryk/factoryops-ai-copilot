@@ -37,6 +37,7 @@ export function App() {
   const [sessionReady, setSessionReady] = useState(false);
   const [offline, setOffline] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const active = useMemo(
     () => runs.find((run) => run.id === activeId) ?? runs[0],
@@ -58,16 +59,18 @@ export function App() {
 
   async function submitRun() {
     setLoading(true);
+    setStatusMessage(`Running analysis with ${session.provider}...`);
     try {
       const run = await createRun(prompt, session);
       setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       setActiveId(run.id);
       setProvider(run.provider);
       setOffline(false);
-    } catch {
+      setStatusMessage(`Run completed with ${run.provider} in ${run.usage.latency_ms} ms.`);
+    } catch (error) {
       setOffline(true);
-      setRuns(staticRuns);
-      setActiveId(staticRuns[0].id);
+      const message = error instanceof Error ? error.message : "Unknown run error";
+      setStatusMessage(`Run failed: ${message}`);
     } finally {
       setLoading(false);
     }
@@ -111,6 +114,18 @@ export function App() {
 
       <div className="mx-auto grid max-w-7xl gap-5 px-4 py-5 xl:grid-cols-[1.4fr_0.8fr]">
         <section className="space-y-5">
+          {statusMessage && (
+            <div
+              className={`border px-4 py-3 text-sm ${
+                statusMessage.startsWith("Run failed")
+                  ? "border-danger bg-danger/10 text-rose-100"
+                  : "border-signal bg-signal/10 text-emerald-100"
+              }`}
+            >
+              {statusMessage}
+            </div>
+          )}
+
           <div className="grid gap-3 md:grid-cols-4">
             <Metric label="Output Gap" value={`${outputGap}`} detail="units below target" tone="danger" />
             <Metric label="OEE" value={`${(active.kpis.oee * 100).toFixed(1)}%`} detail="current shift" />

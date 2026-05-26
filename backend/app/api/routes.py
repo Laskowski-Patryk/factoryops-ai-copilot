@@ -34,14 +34,20 @@ def create_run(
     repo: RunRepository = Depends(get_repo),
     settings: Settings = Depends(get_settings),
 ) -> RunResult:
-    provider = build_provider_from_request(
-        settings,
-        request.provider,
-        request.api_key,
-        request.model,
-    )
-    agent = FactoryOpsAgent(build_registry(), provider)
-    return repo.save(agent.run(request))
+    try:
+        provider = build_provider_from_request(
+            settings,
+            request.provider,
+            request.api_key,
+            request.model,
+        )
+        agent = FactoryOpsAgent(build_registry(), provider)
+        return repo.save(agent.run(request))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Provider run failed: {exc}",
+        ) from exc
 
 
 @router.get("/runs", response_model=list[RunResult])
