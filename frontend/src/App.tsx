@@ -341,7 +341,8 @@ export function App() {
                   </button>
                 </div>
                 <p className="mt-2 text-xs text-slate-400">
-                  Uploaded data is converted into local SQLite and queried read-only.
+                  CSV, XLSX/XLSM, and SQLite are converted into local read-only SQLite.
+                  Any column names are accepted; clear metric names improve inference.
                 </p>
               </div>
             </div>

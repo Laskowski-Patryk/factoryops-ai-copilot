@@ -39,7 +39,7 @@ class FakeCompletions:
                 id="tool-1",
                 function=SimpleNamespace(
                     name="get_production_kpis",
-                    arguments='{"line":"Line A","day":"2026-05-25"}',
+                    arguments='{"line":"Line A","date":"2026-05-25"}',
                 ),
             )
             return SimpleNamespace(
@@ -75,5 +75,9 @@ def test_openrouter_provider_executes_native_tool_call():
 
     assert fake_completions.calls[0]["tools"]
     assert fake_completions.calls[0]["tool_choice"] == "auto"
+    tool_message = fake_completions.calls[1]["messages"][-1]
+    assert tool_message["role"] == "tool"
+    assert '"status": "ok"' in tool_message["content"]
+    assert '"actual_units": 4210' in tool_message["content"]
     assert response.output.root_cause == "tool used"
     assert [tool.name for tool in response.tool_trace] == ["get_production_kpis"]

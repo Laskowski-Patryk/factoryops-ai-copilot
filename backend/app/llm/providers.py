@@ -118,11 +118,19 @@ class OpenRouterProvider(BaseProvider):
                 args = json.loads(tool_call.function.arguments or "{}")
                 result, trace = registry.execute(tool_call.function.name, **args)
                 provider_tool_trace.append(trace)
+                tool_payload = {
+                    "status": trace.status,
+                    "tool": trace.name,
+                    "args": trace.args,
+                    "duration_ms": trace.duration_ms,
+                    "result": result if trace.status == "ok" else None,
+                    "error": trace.result_preview if trace.status != "ok" else None,
+                }
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "content": safe_json(result),
+                        "content": safe_json(tool_payload),
                     }
                 )
 

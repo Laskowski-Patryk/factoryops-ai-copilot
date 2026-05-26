@@ -25,6 +25,23 @@ def query_factory_db(sql: str) -> list[dict]:
     return [{"note": "Demo SELECT accepted", "sql": normalized[:160]}]
 
 
+def get_production_kpis(line: str, date: str | None = None, day: str | None = None):
+    return get_kpis(line=line, day=day or date)
+
+
+def get_downtime_events(line: str, date: str | None = None, day: str | None = None):
+    return get_downtime(line=line, day=day or date)
+
+
+def compare_line_performance(
+    line: str,
+    date: str | None = None,
+    day: str | None = None,
+    days_back: int = 7,
+):
+    return compare_performance(line=line, day=day or date, days_back=days_back)
+
+
 def generate_shift_report(line: str, date: str, kpis: dict, downtime: list[dict]) -> ShiftReport:
     top_categories = sorted({event["category"] for event in downtime})
     return ShiftReport(
@@ -75,7 +92,7 @@ def build_registry(dataset_service=None) -> ToolRegistry:
             description="Fetch line KPI snapshot.",
             input_schema={"line": "str", "date": "YYYY-MM-DD"},
         ),
-        get_kpis,
+        get_production_kpis,
     )
     registry.register(
         ToolSpec(
@@ -83,7 +100,7 @@ def build_registry(dataset_service=None) -> ToolRegistry:
             description="Fetch downtime events.",
             input_schema={"line": "str", "date": "YYYY-MM-DD"},
         ),
-        get_downtime,
+        get_downtime_events,
     )
     registry.register(
         ToolSpec(
@@ -91,7 +108,7 @@ def build_registry(dataset_service=None) -> ToolRegistry:
             description="Compare against previous days.",
             input_schema={"line": "str", "date": "YYYY-MM-DD", "days_back": "int"},
         ),
-        compare_performance,
+        compare_line_performance,
     )
     registry.register(
         ToolSpec(

@@ -152,6 +152,7 @@ class DatasetService:
             insights.append(f"Date/time column candidate: `{roles['date']}`.")
 
         stats = best["numeric_stats"]
+        used_columns = set()
         for role_name, label in [
             ("target", "Target"),
             ("actual", "Actual"),
@@ -161,6 +162,7 @@ class DatasetService:
         ]:
             column = roles.get(role_name)
             if column and column in stats:
+                used_columns.add(column)
                 stat = stats[column]
                 value = stat["latest"] or stat["avg"]
                 cards.append(
@@ -170,6 +172,30 @@ class DatasetService:
                         "detail": f"column `{column}` avg {_format_number(stat['avg'])}",
                     }
                 )
+
+        for column, stat in stats.items():
+            if len(cards) >= 8:
+                break
+            if column in used_columns:
+                continue
+            value = stat["latest"] or stat["avg"]
+            cards.append(
+                {
+                    "label": _pretty_label(column),
+                    "value": _format_number(value),
+                    "detail": f"generic numeric column avg {_format_number(stat['avg'])}",
+                }
+            )
+
+        if stats and not used_columns:
+            insights.append(
+                "No standard manufacturing column names were detected, so generic numeric "
+                "columns were promoted into dashboard cards."
+            )
+        elif not stats:
+            insights.append(
+                "No numeric columns were detected; dashboard is limited to row counts and samples."
+            )
 
         return {
             "mode": "uploaded_dataset",
@@ -339,3 +365,8 @@ def _format_number(value: float | int | None) -> str:
     if abs(float(value)) >= 100:
         return f"{float(value):,.0f}"
     return f"{float(value):.2f}".rstrip("0").rstrip(".")
+
+
+def _pretty_label(value: str) -> str:
+    words = re.sub(r"[_-]+", " ", value).strip().split()
+    return " ".join(word[:1].upper() + word[1:] for word in words) or "Metric"

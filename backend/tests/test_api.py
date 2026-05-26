@@ -90,6 +90,35 @@ def test_delete_uploaded_dataset():
     assert deleted_again.status_code == 404
 
 
+def test_uploaded_dataset_with_arbitrary_columns_gets_generic_cards():
+    response = client.post(
+        "/api/datasets",
+        files={
+            "file": (
+                "custom_columns.csv",
+                "batch,widget_score,shift_loss\nA1,72,8\nA2,81,5\n",
+                "text/csv",
+            )
+        },
+    )
+    assert response.status_code == 200
+    dataset_id = response.json()["id"]
+
+    run = client.post(
+        "/api/runs",
+        json={
+            "prompt": "Analyze this custom operations file",
+            "provider": "mock",
+            "dataset_id": dataset_id,
+        },
+    )
+    assert run.status_code == 200
+    cards = run.json()["dashboard_spec"]["cards"]
+    labels = {card["label"] for card in cards}
+    assert "Widget Score" in labels
+    assert "Shift Loss" in labels
+
+
 def test_stream_mock_run_returns_tool_events():
     response = client.post(
         "/api/runs/stream",
