@@ -36,9 +36,36 @@ const prompts = [
 const SESSION_STORAGE_KEY = "factoryops-provider-session";
 const CONVERSATION_STORAGE_KEY = "factoryops-conversation-id";
 
+function safeGetItem(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetItem(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Some browsers block localStorage on LAN/private modes. The app can still run without persistence.
+  }
+}
+
+function createLocalId() {
+  if (
+    globalThis.crypto &&
+    "randomUUID" in globalThis.crypto &&
+    typeof globalThis.crypto.randomUUID === "function"
+  ) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `thread-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function loadStoredSession(): ProviderSession {
   try {
-    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+    const stored = safeGetItem(SESSION_STORAGE_KEY);
     if (!stored) return { provider: "mock", apiKey: "", model: "openai/gpt-4o-mini" };
     const parsed = JSON.parse(stored) as ProviderSession;
     return {
@@ -66,10 +93,10 @@ export function App() {
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
   const [liveTrace, setLiveTrace] = useState<RunResult["tool_trace"]>([]);
   const [conversationId] = useState(() => {
-    const existing = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    const existing = safeGetItem(CONVERSATION_STORAGE_KEY);
     if (existing) return existing;
-    const next = crypto.randomUUID();
-    localStorage.setItem(CONVERSATION_STORAGE_KEY, next);
+    const next = createLocalId();
+    safeSetItem(CONVERSATION_STORAGE_KEY, next);
     return next;
   });
 
@@ -95,7 +122,7 @@ export function App() {
 
   function updateSession(next: ProviderSession) {
     setSession(next);
-    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(next));
+    safeSetItem(SESSION_STORAGE_KEY, JSON.stringify(next));
   }
 
   async function handleDatasetUpload(file: File | undefined) {
@@ -164,11 +191,11 @@ export function App() {
         <ProviderGate
           session={session}
           onChange={updateSession}
-            onStart={() => {
-              localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-              setProvider(session.provider);
-              setSessionReady(true);
-            }}
+          onStart={() => {
+            safeSetItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+            setProvider(session.provider);
+            setSessionReady(true);
+          }}
         />
       )}
       <div className="border-b border-white/10 bg-panel">
