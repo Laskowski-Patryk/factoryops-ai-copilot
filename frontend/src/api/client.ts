@@ -1,7 +1,7 @@
-import type { RunResult } from "../types/run";
+import type { DatasetSummary, RunResult } from "../types/run";
 
 export type ProviderSession = {
-  provider: "mock" | "openai" | "openrouter";
+  provider: "mock" | "openrouter";
   apiKey: string;
   model: string;
 };
@@ -18,7 +18,11 @@ export async function fetchRuns(): Promise<RunResult[]> {
   return response.json();
 }
 
-export async function createRun(prompt: string, session: ProviderSession): Promise<RunResult> {
+export async function createRun(
+  prompt: string,
+  session: ProviderSession,
+  datasetId?: string
+): Promise<RunResult> {
   const response = await fetch("/api/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -27,12 +31,33 @@ export async function createRun(prompt: string, session: ProviderSession): Promi
       line: "Line A",
       provider: session.provider,
       api_key: session.provider === "mock" ? undefined : session.apiKey,
-      model: session.provider === "mock" ? undefined : session.model
+      model: session.provider === "mock" ? undefined : session.model,
+      dataset_id: datasetId || undefined
     })
   });
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(detail || `Run failed with HTTP ${response.status}`);
   }
+  return response.json();
+}
+
+export async function uploadDataset(file: File): Promise<DatasetSummary> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch("/api/datasets", {
+    method: "POST",
+    body: form
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Upload failed with HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchDatasets(): Promise<DatasetSummary[]> {
+  const response = await fetch("/api/datasets");
+  if (!response.ok) throw new Error("datasets unavailable");
   return response.json();
 }

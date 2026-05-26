@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-ProviderName = Literal["mock", "openrouter", "openai"]
+ProviderName = Literal["mock", "openrouter"]
 
 
 class RunRequest(BaseModel):
@@ -14,6 +14,8 @@ class RunRequest(BaseModel):
     provider: ProviderName | None = None
     api_key: str | None = Field(default=None, max_length=400)
     model: str | None = Field(default=None, max_length=120)
+    dataset_id: str | None = None
+    conversation_id: str | None = None
 
 
 class KpiSnapshot(BaseModel):
@@ -79,6 +81,45 @@ class UsageMetrics(BaseModel):
     latency_ms: int
 
 
+class DashboardCard(BaseModel):
+    label: str
+    value: str
+    detail: str = ""
+    tone: Literal["signal", "warning", "danger", "neutral"] = "neutral"
+
+
+class DashboardTable(BaseModel):
+    title: str
+    columns: list[str]
+    rows: list[list[str]]
+
+
+class DashboardSpec(BaseModel):
+    title: str
+    cards: list[DashboardCard] = []
+    insights: list[str] = []
+    tables: list[DashboardTable] = []
+    chart_hints: list[dict[str, Any]] = []
+
+
+class AgentOutput(BaseModel):
+    markdown: str
+    summary: str
+    root_cause: str
+    recommended_actions: list[str]
+    dashboard: DashboardSpec
+
+
+class DatasetSummary(BaseModel):
+    id: str
+    name: str
+    kind: Literal["csv", "excel", "sqlite"]
+    created_at: datetime
+    tables: list[str]
+    row_count: int
+    columns: list[str]
+
+
 class RunResult(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -87,6 +128,12 @@ class RunResult(BaseModel):
     date: str
     provider: str
     final_answer: str
+    answer_markdown: str = ""
+    dashboard_spec: DashboardSpec = Field(
+        default_factory=lambda: DashboardSpec(title="FactoryOps Run")
+    )
+    dataset_id: str | None = None
+    conversation_id: str | None = None
     root_cause: str
     recommended_actions: list[str]
     kpis: KpiSnapshot

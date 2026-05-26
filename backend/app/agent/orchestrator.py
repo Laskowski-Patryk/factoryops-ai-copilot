@@ -13,6 +13,18 @@ class FactoryOpsAgent:
         day = request.date or default_date()
         trace = []
 
+        dataset_metrics = None
+        dataset_profile = None
+        if request.dataset_id:
+            dataset_profile, call = self.registry.execute(
+                "inspect_uploaded_dataset", dataset_id=request.dataset_id
+            )
+            trace.append(call)
+            dataset_metrics, call = self.registry.execute(
+                "infer_uploaded_factory_metrics", dataset_id=request.dataset_id
+            )
+            trace.append(call)
+
         kpis, call = self.registry.execute("get_production_kpis", line=request.line, day=day)
         trace.append(call)
         downtime, call = self.registry.execute("get_downtime_events", line=request.line, day=day)
@@ -66,6 +78,9 @@ class FactoryOpsAgent:
         llm = self.provider.complete(
             request.prompt,
             {
+                "dataset_id": request.dataset_id,
+                "dataset_profile": dataset_profile,
+                "dataset_metrics": dataset_metrics,
                 "kpis": kpis,
                 "downtime": downtime,
                 "comparison": comparison,
@@ -73,15 +88,22 @@ class FactoryOpsAgent:
                 "root_cause": root_cause,
                 "actions": actions,
             },
+            registry=self.registry,
         )
+        trace.extend(llm.tool_trace)
+        answer = llm.output
         return RunResult(
             prompt=request.prompt,
             line=request.line,
             date=day,
             provider=self.provider.name,
-            final_answer=llm.text,
-            root_cause=root_cause,
-            recommended_actions=actions,
+            final_answer=answer.markdown,
+            answer_markdown=answer.markdown,
+            dashboard_spec=answer.dashboard,
+            dataset_id=request.dataset_id,
+            conversation_id=request.conversation_id,
+            root_cause=answer.root_cause or root_cause,
+            recommended_actions=answer.recommended_actions or actions,
             kpis=kpis,
             downtime=downtime,
             comparison=comparison,

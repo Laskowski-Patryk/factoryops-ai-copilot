@@ -11,12 +11,17 @@ BLOCKED_SQL = re.compile(
 )
 
 
-def query_factory_db(sql: str) -> list[dict]:
+def assert_select_only(sql: str) -> None:
     normalized = sql.strip()
     if not normalized.lower().startswith("select") or BLOCKED_SQL.search(normalized):
         raise ValueError(
             "Only read-only SELECT statements are allowed in the demo factory database."
         )
+
+
+def query_factory_db(sql: str) -> list[dict]:
+    normalized = sql.strip()
+    assert_select_only(normalized)
     return [{"note": "Demo SELECT accepted", "sql": normalized[:160]}]
 
 
@@ -62,7 +67,7 @@ def create_power_automate_flow_spec(
     )
 
 
-def build_registry() -> ToolRegistry:
+def build_registry(dataset_service=None) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(
         ToolSpec(
@@ -142,4 +147,29 @@ def build_registry() -> ToolRegistry:
         ),
         query_factory_db,
     )
+    if dataset_service:
+        registry.register(
+            ToolSpec(
+                name="inspect_uploaded_dataset",
+                description="Profile an uploaded CSV, Excel workbook, or SQLite dataset.",
+                input_schema={"dataset_id": "str"},
+            ),
+            dataset_service.profile,
+        )
+        registry.register(
+            ToolSpec(
+                name="infer_uploaded_factory_metrics",
+                description="Infer dashboard-ready metrics from an uploaded dataset.",
+                input_schema={"dataset_id": "str"},
+            ),
+            dataset_service.infer_factory_metrics,
+        )
+        registry.register(
+            ToolSpec(
+                name="query_uploaded_dataset",
+                description="Run SELECT-only SQL against an uploaded dataset.",
+                input_schema={"dataset_id": "str", "sql": "SELECT ..."},
+            ),
+            dataset_service.query,
+        )
     return registry

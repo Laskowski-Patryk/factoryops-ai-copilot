@@ -17,10 +17,12 @@ The app reads generated KPIs, checks downtime, compares the previous 7 days, sea
 ## Features
 
 - Deterministic mock provider by default: no API key, no paid hosting, repeatable output.
-- Optional OpenRouter and OpenAI providers through the OpenAI SDK-compatible abstraction.
+- Optional OpenRouter provider through the OpenAI SDK-compatible abstraction.
 - FastAPI backend with typed Pydantic v2 schemas and SQLite persistence.
 - MCP-shaped tool registry with typed tool metadata and execution trace.
 - React, TypeScript, Vite, Tailwind dashboard with static fallback mode.
+- CSV, XLSX/XLSM, and SQLite uploads converted to local read-only SQLite analysis datasets.
+- Structured `answer_markdown` and `dashboard_spec` output for dashboard construction.
 - SQL safety guard for `query_factory_db`: SELECT-only, blocks writes and admin commands.
 - Docker Compose, Makefile, pytest, ruff, frontend build, and GitHub Actions CI.
 
@@ -38,7 +40,7 @@ flowchart LR
   Registry --> Report["Shift report"]
   Registry --> Ticket["Mock ticket"]
   Registry --> Flow["Power Automate spec"]
-  Agent --> LLM["mock / OpenRouter / OpenAI"]
+  Agent --> LLM["mock / OpenRouter"]
   API --> SQLite["SQLite"]
   API --> JSONL["runs.jsonl"]
 ```
@@ -80,15 +82,8 @@ OPENROUTER_API_KEY=your_openrouter_key_here
 OPENROUTER_MODEL=openai/gpt-4o-mini
 ```
 
-OpenAI:
-
-```env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=your_openai_key_here
-OPENAI_MODEL=gpt-4o-mini
-```
-
-Secrets are never hardcoded. `.env` is ignored by git. The UI only shows provider, model, latency, and token counts.
+Secrets are never hardcoded. `.env` is ignored by git. In the local UI you can store
+your OpenRouter key and model in browser `localStorage` for convenience.
 
 ## Sample Output
 
@@ -114,6 +109,9 @@ Line A underperformed because repeated sensor faults created 94 minutes of downt
 - `create_maintenance_ticket(line,issue,priority,evidence)`
 - `create_power_automate_flow_spec(trigger,actions,target_users)`
 - `query_factory_db(sql)`
+- `inspect_uploaded_dataset(dataset_id)`
+- `infer_uploaded_factory_metrics(dataset_id)`
+- `query_uploaded_dataset(dataset_id, sql)`
 
 The project includes `backend/app/mcp_server.py` as an MCP-shaped manifest entrypoint. It intentionally avoids claiming full MCP runtime support; the demo focuses on the registry shape, typed schemas, traceability, and safe orchestration.
 
@@ -135,4 +133,4 @@ The project includes `backend/app/mcp_server.py` as an MCP-shaped manifest entry
 
 ## LinkedIn Featured Text
 
-Built FactoryOps AI Copilot, a local-first AI automation portfolio demo for manufacturing performance triage. It combines FastAPI, React, SQLite, typed tool orchestration, mock/OpenRouter/OpenAI providers, deterministic fake factory data, tool traces, generated shift reports, mock maintenance tickets, and Power Automate flow specs. Runs with Docker Compose and needs no API key by default.
+Built FactoryOps AI Copilot, a local-first AI automation portfolio demo for manufacturing performance triage. It combines FastAPI, React, SQLite, typed tool orchestration, mock/OpenRouter providers, deterministic fake factory data, uploaded CSV/XLSX/SQLite analysis, tool traces, generated shift reports, mock maintenance tickets, and Power Automate flow specs. Runs with Docker Compose and needs no API key by default.

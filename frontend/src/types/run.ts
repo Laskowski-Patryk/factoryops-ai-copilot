@@ -24,6 +24,10 @@ export type RunResult = {
   date: string;
   provider: string;
   final_answer: string;
+  answer_markdown?: string;
+  dashboard_spec?: DashboardSpec;
+  dataset_id?: string | null;
+  conversation_id?: string | null;
   root_cause: string;
   recommended_actions: string[];
   kpis: KpiSnapshot;
@@ -60,4 +64,35 @@ export type RunResult = {
     total_tokens: number;
     latency_ms: number;
   };
+};
+
+export type DashboardCard = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "signal" | "warning" | "danger" | "neutral";
+};
+
+export type DashboardTable = {
+  title: string;
+  columns: string[];
+  rows: string[][];
+};
+
+export type DashboardSpec = {
+  title: string;
+  cards: DashboardCard[];
+  insights: string[];
+  tables: DashboardTable[];
+  chart_hints: Array<Record<string, unknown>>;
+};
+
+export type DatasetSummary = {
+  id: string;
+  name: string;
+  kind: "csv" | "excel" | "sqlite";
+  created_at: string;
+  tables: string[];
+  row_count: number;
+  columns: string[];
 };

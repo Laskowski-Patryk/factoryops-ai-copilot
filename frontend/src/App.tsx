@@ -3,6 +3,7 @@ import {
   Bot,
   CheckCircle2,
   Clock3,
+  Database,
   KeyRound,
   FileText,
   Gauge,
@@ -10,12 +11,20 @@ import {
   Play,
   ShieldCheck,
   TicketCheck,
+  Upload,
   Workflow
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { createRun, fetchConfig, fetchRuns, type ProviderSession } from "./api/client";
+import {
+  createRun,
+  fetchConfig,
+  fetchDatasets,
+  fetchRuns,
+  type ProviderSession,
+  uploadDataset
+} from "./api/client";
 import { samplePrompt, staticRuns } from "./demo/staticRuns";
-import type { RunResult } from "./types/run";
+import type { DatasetSummary, RunResult } from "./types/run";
 
 const prompts = [
   samplePrompt,
@@ -24,20 +33,36 @@ const prompts = [
   "What automation flow should notify maintenance after recurring downtime?"
 ];
 
+const SESSION_STORAGE_KEY = "factoryops-provider-session";
+
+function loadStoredSession(): ProviderSession {
+  try {
+    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!stored) return { provider: "mock", apiKey: "", model: "openai/gpt-4o-mini" };
+    const parsed = JSON.parse(stored) as ProviderSession;
+    return {
+      provider: parsed.provider === "openrouter" ? "openrouter" : "mock",
+      apiKey: parsed.apiKey ?? "",
+      model: parsed.model || "openai/gpt-4o-mini"
+    };
+  } catch {
+    return { provider: "mock", apiKey: "", model: "openai/gpt-4o-mini" };
+  }
+}
+
 export function App() {
   const [prompt, setPrompt] = useState(samplePrompt);
   const [runs, setRuns] = useState<RunResult[]>(staticRuns);
   const [activeId, setActiveId] = useState(staticRuns[0].id);
   const [provider, setProvider] = useState("mock");
-  const [session, setSession] = useState<ProviderSession>({
-    provider: "mock",
-    apiKey: "",
-    model: ""
-  });
+  const [session, setSession] = useState<ProviderSession>(loadStoredSession);
   const [sessionReady, setSessionReady] = useState(false);
   const [offline, setOffline] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
 
   const active = useMemo(
     () => runs.find((run) => run.id === activeId) ?? runs[0],
@@ -45,23 +70,49 @@ export function App() {
   );
 
   useEffect(() => {
-    Promise.all([fetchConfig(), fetchRuns()])
-      .then(([config, apiRuns]) => {
+    Promise.all([fetchConfig(), fetchRuns(), fetchDatasets()])
+      .then(([config, apiRuns, apiDatasets]) => {
         setProvider(config.provider ?? "mock");
         if (apiRuns.length) {
           setRuns(apiRuns);
           setActiveId(apiRuns[0].id);
         }
+        setDatasets(apiDatasets);
+        if (apiDatasets.length) setSelectedDatasetId(apiDatasets[0].id);
         setOffline(false);
       })
       .catch(() => setOffline(true));
   }, []);
 
+  function updateSession(next: ProviderSession) {
+    setSession(next);
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(next));
+  }
+
+  async function handleDatasetUpload(file: File | undefined) {
+    if (!file) return;
+    setUploading(true);
+    setStatusMessage(`Uploading ${file.name}...`);
+    try {
+      const dataset = await uploadDataset(file);
+      setDatasets((current) => [dataset, ...current.filter((item) => item.id !== dataset.id)]);
+      setSelectedDatasetId(dataset.id);
+      setStatusMessage(
+        `Dataset uploaded: ${dataset.name} (${dataset.row_count} rows, ${dataset.tables.length} table/s).`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown upload error";
+      setStatusMessage(`Run failed: ${message}`);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function submitRun() {
     setLoading(true);
     setStatusMessage(`Running analysis with ${session.provider}...`);
     try {
-      const run = await createRun(prompt, session);
+      const run = await createRun(prompt, session, selectedDatasetId);
       setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       setActiveId(run.id);
       setProvider(run.provider);
@@ -84,11 +135,12 @@ export function App() {
       {!sessionReady && (
         <ProviderGate
           session={session}
-          onChange={setSession}
-          onStart={() => {
-            setProvider(session.provider);
-            setSessionReady(true);
-          }}
+          onChange={updateSession}
+            onStart={() => {
+              localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+              setProvider(session.provider);
+              setSessionReady(true);
+            }}
         />
       )}
       <div className="border-b border-white/10 bg-panel">
@@ -127,11 +179,76 @@ export function App() {
           )}
 
           <div className="grid gap-3 md:grid-cols-4">
-            <Metric label="Output Gap" value={`${outputGap}`} detail="units below target" tone="danger" />
-            <Metric label="OEE" value={`${(active.kpis.oee * 100).toFixed(1)}%`} detail="current shift" />
-            <Metric label="Downtime" value={`${active.kpis.downtime_minutes}m`} detail={`+${downtimeDelta}m vs 7d`} tone="warning" />
-            <Metric label="Scrap" value={`${(active.kpis.scrap_rate * 100).toFixed(1)}%`} detail="synthetic KPI" />
+            {(active.dashboard_spec?.cards?.length
+              ? active.dashboard_spec.cards
+              : [
+                  {
+                    label: "Output Gap",
+                    value: `${outputGap}`,
+                    detail: "units below target",
+                    tone: "danger" as const
+                  },
+                  {
+                    label: "OEE",
+                    value: `${(active.kpis.oee * 100).toFixed(1)}%`,
+                    detail: "current shift",
+                    tone: "signal" as const
+                  },
+                  {
+                    label: "Downtime",
+                    value: `${active.kpis.downtime_minutes}m`,
+                    detail: `+${downtimeDelta}m vs 7d`,
+                    tone: "warning" as const
+                  },
+                  {
+                    label: "Scrap",
+                    value: `${(active.kpis.scrap_rate * 100).toFixed(1)}%`,
+                    detail: "synthetic KPI",
+                    tone: "neutral" as const
+                  }
+                ]).map((card) => (
+              <Metric
+                key={`${card.label}-${card.value}`}
+                label={card.label}
+                value={card.value}
+                detail={card.detail}
+                tone={card.tone}
+              />
+            ))}
           </div>
+
+          <Panel title="Upload Operational Data" icon={<Upload size={18} />}>
+            <div className="grid gap-3 md:grid-cols-[1fr_0.8fr]">
+              <label className="flex cursor-pointer items-center justify-center gap-2 border border-dashed border-white/20 bg-steel px-4 py-6 text-sm hover:border-signal">
+                <Upload size={18} />
+                {uploading ? "Uploading..." : "Upload CSV, XLSX or SQLite"}
+                <input
+                  className="hidden"
+                  type="file"
+                  accept=".csv,.xlsx,.xlsm,.sqlite,.sqlite3,.db"
+                  onChange={(event) => handleDatasetUpload(event.target.files?.[0])}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs uppercase text-slate-400">Active dataset</span>
+                <select
+                  className="mt-2 w-full border border-white/10 bg-steel px-3 py-2 text-sm outline-none focus:border-signal"
+                  value={selectedDatasetId}
+                  onChange={(event) => setSelectedDatasetId(event.target.value)}
+                >
+                  <option value="">Fake factory demo data</option>
+                  {datasets.map((dataset) => (
+                    <option key={dataset.id} value={dataset.id}>
+                      {dataset.name} - {dataset.row_count} rows
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs text-slate-400">
+                  Uploaded data is converted into local SQLite and queried read-only.
+                </p>
+              </label>
+            </div>
+          </Panel>
 
           <Panel title="Ask The Copilot" icon={<Play size={18} />}>
             <textarea
@@ -161,7 +278,7 @@ export function App() {
           </Panel>
 
           <Panel title="Final Answer" icon={<CheckCircle2 size={18} />}>
-            <p className="text-sm leading-6 text-slate-200">{active.final_answer}</p>
+            <MarkdownBlock markdown={active.answer_markdown || active.final_answer} />
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
                 <h3 className="text-sm font-semibold text-white">Root Cause</h3>
@@ -198,6 +315,39 @@ export function App() {
               </div>
             </Panel>
           </div>
+
+          {!!active.dashboard_spec?.tables?.length && (
+            <div className="grid gap-5">
+              {active.dashboard_spec.tables.map((table) => (
+                <Panel key={table.title} title={table.title} icon={<Database size={18} />}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead className="text-slate-400">
+                        <tr>
+                          {table.columns.map((column) => (
+                            <th key={column} className="border-b border-white/10 px-2 py-2">
+                              {column}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {table.rows.slice(0, 8).map((row, index) => (
+                          <tr key={`${table.title}-${index}`} className="border-b border-white/5">
+                            {row.map((cell, cellIndex) => (
+                              <td key={`${cell}-${cellIndex}`} className="px-2 py-2 text-slate-300">
+                                {cell}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+              ))}
+            </div>
+          )}
         </section>
 
         <aside className="space-y-5">
@@ -255,6 +405,67 @@ function Badge({ icon, text }: { icon: React.ReactNode; text: string }) {
   );
 }
 
+function MarkdownBlock({ markdown }: { markdown: string }) {
+  return (
+    <div className="space-y-2 text-sm leading-6 text-slate-200">
+      {markdown.split("\n").map((line, index) => {
+        if (!line.trim()) return <div key={index} className="h-1" />;
+        if (line.startsWith("### ")) {
+          return (
+            <h3 key={index} className="pt-2 text-sm font-semibold text-white">
+              {line.replace("### ", "")}
+            </h3>
+          );
+        }
+        if (line.startsWith("## ")) {
+          return (
+            <h2 key={index} className="pt-2 text-base font-semibold text-white">
+              {line.replace("## ", "")}
+            </h2>
+          );
+        }
+        if (line.startsWith("- ")) {
+          return (
+            <p key={index} className="pl-3 text-slate-300">
+              <span className="text-signal">• </span>
+              <InlineMarkdown text={line.replace("- ", "")} />
+            </p>
+          );
+        }
+        if (/^\d+\.\s/.test(line)) {
+          return (
+            <p key={index} className="pl-3 text-slate-300">
+              <InlineMarkdown text={line} />
+            </p>
+          );
+        }
+        return (
+          <p key={index}>
+            <InlineMarkdown text={line} />
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function InlineMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.startsWith("**") && part.endsWith("**") ? (
+          <strong key={index} className="font-semibold text-white">
+            {part.slice(2, -2)}
+          </strong>
+        ) : (
+          <span key={index}>{part}</span>
+        )
+      )}
+    </>
+  );
+}
+
 function ProviderGate({
   session,
   onChange,
@@ -281,7 +492,7 @@ function ProviderGate({
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-3">
-          {(["mock", "openai", "openrouter"] as ProviderSession["provider"][]).map((item) => (
+          {(["mock", "openrouter"] as ProviderSession["provider"][]).map((item) => (
             <button
               key={item}
               className={`border p-4 text-left ${
@@ -294,9 +505,7 @@ function ProviderGate({
                   model:
                     item === "mock"
                       ? ""
-                      : item === "openrouter"
-                        ? "openai/gpt-4o-mini"
-                        : "gpt-4o-mini"
+                      : "openai/gpt-4o-mini"
                 })
               }
             >
@@ -317,9 +526,7 @@ function ProviderGate({
               <input
                 className="mt-2 w-full border border-white/10 bg-steel px-3 py-2 text-sm outline-none focus:border-signal"
                 type="password"
-                placeholder={
-                  session.provider === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY"
-                }
+                placeholder="OPENROUTER_API_KEY"
                 value={session.apiKey}
                 onChange={(event) => onChange({ ...session, apiKey: event.target.value })}
               />
@@ -337,8 +544,8 @@ function ProviderGate({
 
         <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs leading-5 text-slate-400">
-            Keys are sent only to the local backend for the selected run and are not stored in
-            SQLite, JSONL, git, or browser storage.
+            The OpenRouter key and model are saved in this browser's localStorage for convenience.
+            They are not stored in SQLite, JSONL, git, or backend files.
           </p>
           <button
             className="inline-flex shrink-0 items-center justify-center gap-2 bg-signal px-4 py-2 text-sm font-semibold text-ink disabled:opacity-50"
@@ -363,9 +570,16 @@ function Metric({
   label: string;
   value: string;
   detail: string;
-  tone?: "signal" | "warning" | "danger";
+  tone?: "signal" | "warning" | "danger" | "neutral";
 }) {
-  const color = tone === "danger" ? "text-danger" : tone === "warning" ? "text-warning" : "text-signal";
+  const color =
+    tone === "danger"
+      ? "text-danger"
+      : tone === "warning"
+        ? "text-warning"
+        : tone === "signal"
+          ? "text-signal"
+          : "text-slate-100";
   return (
     <div className="border border-white/10 bg-panel p-4">
       <p className="text-xs uppercase text-slate-400">{label}</p>
