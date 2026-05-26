@@ -3,7 +3,7 @@ from queue import Queue
 from threading import Thread
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.agent.orchestrator import FactoryOpsAgent
@@ -161,3 +161,17 @@ def get_dataset_profile(
     dataset_service: DatasetService = Depends(get_dataset_service),
 ) -> dict:
     return dataset_service.profile(dataset_id)
+
+
+@router.delete("/datasets/{dataset_id}", status_code=204)
+def delete_dataset(
+    dataset_id: str,
+    dataset_service: DatasetService = Depends(get_dataset_service),
+) -> Response:
+    try:
+        deleted = dataset_service.delete(dataset_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return Response(status_code=204)

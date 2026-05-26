@@ -4,18 +4,20 @@ import {
   CheckCircle2,
   Clock3,
   Database,
-  KeyRound,
   FileText,
   Gauge,
   History,
+  KeyRound,
   Play,
   ShieldCheck,
   TicketCheck,
+  Trash2,
   Upload,
   Workflow
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
+  deleteDataset,
   fetchConfig,
   fetchDatasets,
   fetchRuns,
@@ -88,6 +90,7 @@ export function App() {
   const [offline, setOffline] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deletingDatasetId, setDeletingDatasetId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
@@ -148,6 +151,30 @@ export function App() {
     }
   }
 
+  async function handleDatasetDelete(datasetId: string) {
+    if (!datasetId) return;
+    const dataset = datasets.find((item) => item.id === datasetId);
+    const name = dataset?.name ?? "selected dataset";
+    const confirmed = window.confirm(
+      `Delete "${name}" from local uploads? Existing run history will stay, but this file will no longer be available for new analysis.`
+    );
+    if (!confirmed) return;
+
+    setDeletingDatasetId(datasetId);
+    setStatusMessage(`Deleting dataset: ${name}...`);
+    try {
+      await deleteDataset(datasetId);
+      setDatasets((current) => current.filter((item) => item.id !== datasetId));
+      setSelectedDatasetId((current) => (current === datasetId ? "" : current));
+      setStatusMessage(`Dataset deleted: ${name}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown delete error";
+      setStatusMessage(`Delete failed: ${message}`);
+    } finally {
+      setDeletingDatasetId(null);
+    }
+  }
+
   async function submitRun() {
     await runAnalysis(prompt, selectedDatasetId || undefined);
   }
@@ -184,6 +211,8 @@ export function App() {
 
   const outputGap = active.kpis.target_units - active.kpis.actual_units;
   const downtimeDelta = Number(active.comparison.downtime_delta_minutes ?? 0);
+  const isFailureStatus =
+    statusMessage?.startsWith("Run failed") || statusMessage?.startsWith("Delete failed");
 
   return (
     <main className="min-h-screen bg-ink text-slate-100">
@@ -225,7 +254,7 @@ export function App() {
           {statusMessage && (
             <div
               className={`border px-4 py-3 text-sm ${
-                statusMessage.startsWith("Run failed")
+                isFailureStatus
                   ? "border-danger bg-danger/10 text-rose-100"
                   : "border-signal bg-signal/10 text-emerald-100"
               }`}
@@ -285,24 +314,36 @@ export function App() {
                   onChange={(event) => handleDatasetUpload(event.target.files?.[0])}
                 />
               </label>
-              <label className="block">
+              <div className="block">
                 <span className="text-xs uppercase text-slate-400">Active dataset</span>
-                <select
-                  className="mt-2 w-full border border-white/10 bg-steel px-3 py-2 text-sm outline-none focus:border-signal"
-                  value={selectedDatasetId}
-                  onChange={(event) => setSelectedDatasetId(event.target.value)}
-                >
-                  <option value="">Fake factory demo data</option>
-                  {datasets.map((dataset) => (
-                    <option key={dataset.id} value={dataset.id}>
-                      {dataset.name} - {dataset.row_count} rows
-                    </option>
-                  ))}
-                </select>
+                <div className="mt-2 flex gap-2">
+                  <select
+                    className="min-w-0 flex-1 border border-white/10 bg-steel px-3 py-2 text-sm outline-none focus:border-signal"
+                    value={selectedDatasetId}
+                    onChange={(event) => setSelectedDatasetId(event.target.value)}
+                  >
+                    <option value="">Fake factory demo data</option>
+                    {datasets.map((dataset) => (
+                      <option key={dataset.id} value={dataset.id}>
+                        {dataset.name} - {dataset.row_count} rows
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    title="Delete selected uploaded dataset"
+                    className="inline-flex shrink-0 items-center justify-center gap-2 border border-white/10 px-3 py-2 text-sm text-slate-200 hover:border-danger hover:text-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!selectedDatasetId || deletingDatasetId === selectedDatasetId}
+                    onClick={() => handleDatasetDelete(selectedDatasetId)}
+                  >
+                    <Trash2 size={16} />
+                    {deletingDatasetId === selectedDatasetId ? "Deleting" : "Delete"}
+                  </button>
+                </div>
                 <p className="mt-2 text-xs text-slate-400">
                   Uploaded data is converted into local SQLite and queried read-only.
                 </p>
-              </label>
+              </div>
             </div>
           </Panel>
 

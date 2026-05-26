@@ -66,6 +66,30 @@ def test_upload_csv_and_run_against_dataset():
     assert "Uploaded Dataset" in body["answer_markdown"]
 
 
+def test_delete_uploaded_dataset():
+    response = client.post(
+        "/api/datasets",
+        files={
+            "file": (
+                "delete_me.csv",
+                "line,date,target,actual\nA,2026-05-25,100,88\n",
+                "text/csv",
+            )
+        },
+    )
+    assert response.status_code == 200
+    dataset_id = response.json()["id"]
+
+    assert client.get(f"/api/datasets/{dataset_id}").status_code == 200
+
+    deleted = client.delete(f"/api/datasets/{dataset_id}")
+    assert deleted.status_code == 204
+    assert client.get(f"/api/datasets/{dataset_id}").status_code == 404
+
+    deleted_again = client.delete(f"/api/datasets/{dataset_id}")
+    assert deleted_again.status_code == 404
+
+
 def test_stream_mock_run_returns_tool_events():
     response = client.post(
         "/api/runs/stream",

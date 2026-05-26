@@ -116,3 +116,13 @@ export async function fetchDatasets(): Promise<DatasetSummary[]> {
   if (!response.ok) throw new Error("datasets unavailable");
   return response.json();
 }
+
+export async function deleteDataset(datasetId: string): Promise<void> {
+  const response = await fetch(`/api/datasets/${encodeURIComponent(datasetId)}`, {
+    method: "DELETE"
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || `Delete failed with HTTP ${response.status}`);
+  }
+}

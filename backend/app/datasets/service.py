@@ -25,7 +25,7 @@ BLOCKED_PYTHON = re.compile(
 
 class DatasetService:
     def __init__(self, uploads_dir: str) -> None:
-        self.uploads_dir = Path(uploads_dir)
+        self.uploads_dir = Path(uploads_dir).resolve()
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
 
     def upload(self, file: UploadFile) -> DatasetSummary:
@@ -64,10 +64,20 @@ class DatasetService:
         return sorted(summaries, key=lambda item: item.created_at, reverse=True)
 
     def get(self, dataset_id: str) -> DatasetSummary | None:
-        metadata = self.uploads_dir / dataset_id / "metadata.json"
+        try:
+            metadata = self._dataset_dir(dataset_id) / "metadata.json"
+        except ValueError:
+            return None
         if not metadata.exists():
             return None
         return DatasetSummary.model_validate_json(metadata.read_text(encoding="utf-8"))
+
+    def delete(self, dataset_id: str) -> bool:
+        folder = self._dataset_dir(dataset_id)
+        if not folder.exists():
+            return False
+        shutil.rmtree(folder)
+        return True
 
     def profile(self, dataset_id: str) -> dict:
         db_path = self._db_path(dataset_id)
@@ -230,9 +240,17 @@ class DatasetService:
         )
 
     def _db_path(self, dataset_id: str) -> Path:
-        path = self.uploads_dir / dataset_id / "dataset.sqlite3"
+        path = self._dataset_dir(dataset_id) / "dataset.sqlite3"
         if not path.exists():
             raise ValueError(f"Dataset not found: {dataset_id}")
+        return path
+
+    def _dataset_dir(self, dataset_id: str) -> Path:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,100}", dataset_id):
+            raise ValueError("Invalid dataset id")
+        path = (self.uploads_dir / dataset_id).resolve()
+        if self.uploads_dir != path and self.uploads_dir not in path.parents:
+            raise ValueError("Invalid dataset path")
         return path
 
     def _tables(self, conn: sqlite3.Connection) -> list[str]:
