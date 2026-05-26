@@ -11,6 +11,9 @@ class RunRequest(BaseModel):
     prompt: str = Field(min_length=3, max_length=1000)
     line: str = "Line A"
     date: str | None = None
+    provider: ProviderName | None = None
+    api_key: str | None = Field(default=None, max_length=400)
+    model: str | None = Field(default=None, max_length=120)
 
 
 class KpiSnapshot(BaseModel):

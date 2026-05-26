@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.agent.orchestrator import FactoryOpsAgent
 from app.core.config import Settings, get_settings
 from app.db.repository import RunRepository
-from app.llm.providers import build_provider
+from app.llm.providers import build_provider, build_provider_from_request
 from app.models.schemas import RunRequest, RunResult
 from app.tools.factory_tools import build_registry
 
@@ -31,9 +31,16 @@ def config(settings: Settings = Depends(get_settings)) -> dict:
 @router.post("/runs", response_model=RunResult)
 def create_run(
     request: RunRequest,
-    agent: FactoryOpsAgent = Depends(get_agent),
     repo: RunRepository = Depends(get_repo),
+    settings: Settings = Depends(get_settings),
 ) -> RunResult:
+    provider = build_provider_from_request(
+        settings,
+        request.provider,
+        request.api_key,
+        request.model,
+    )
+    agent = FactoryOpsAgent(build_registry(), provider)
     return repo.save(agent.run(request))
 
 

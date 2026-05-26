@@ -102,3 +102,30 @@ def build_provider(settings: Settings) -> BaseProvider:
             base_url="https://openrouter.ai/api/v1",
         )
     return MockProvider()
+
+
+def build_provider_from_request(
+    settings: Settings,
+    provider: str | None,
+    api_key: str | None,
+    model: str | None,
+) -> BaseProvider:
+    selected = (provider or settings.llm_provider).lower()
+    if selected == "openai" and api_key:
+        return OpenAICompatibleProvider(
+            "openai",
+            model or settings.openai_model,
+            api_key,
+        )
+    if selected == "openrouter" and api_key:
+        return OpenAICompatibleProvider(
+            "openrouter",
+            model or settings.openrouter_model,
+            api_key,
+            base_url="https://openrouter.ai/api/v1",
+        )
+    if selected in {"openai", "openrouter"}:
+        env_provider = build_provider(settings)
+        if env_provider.name == selected:
+            return env_provider
+    return MockProvider()

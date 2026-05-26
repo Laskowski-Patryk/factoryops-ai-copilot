@@ -3,6 +3,7 @@ import {
   Bot,
   CheckCircle2,
   Clock3,
+  KeyRound,
   FileText,
   Gauge,
   History,
@@ -12,7 +13,7 @@ import {
   Workflow
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { createRun, fetchConfig, fetchRuns } from "./api/client";
+import { createRun, fetchConfig, fetchRuns, type ProviderSession } from "./api/client";
 import { samplePrompt, staticRuns } from "./demo/staticRuns";
 import type { RunResult } from "./types/run";
 
@@ -28,6 +29,12 @@ export function App() {
   const [runs, setRuns] = useState<RunResult[]>(staticRuns);
   const [activeId, setActiveId] = useState(staticRuns[0].id);
   const [provider, setProvider] = useState("mock");
+  const [session, setSession] = useState<ProviderSession>({
+    provider: "mock",
+    apiKey: "",
+    model: ""
+  });
+  const [sessionReady, setSessionReady] = useState(false);
   const [offline, setOffline] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -52,7 +59,7 @@ export function App() {
   async function submitRun() {
     setLoading(true);
     try {
-      const run = await createRun(prompt);
+      const run = await createRun(prompt, session);
       setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       setActiveId(run.id);
       setProvider(run.provider);
@@ -71,6 +78,16 @@ export function App() {
 
   return (
     <main className="min-h-screen bg-ink text-slate-100">
+      {!sessionReady && (
+        <ProviderGate
+          session={session}
+          onChange={setSession}
+          onStart={() => {
+            setProvider(session.provider);
+            setSessionReady(true);
+          }}
+        />
+      )}
       <div className="border-b border-white/10 bg-panel">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 md:flex-row md:items-center md:justify-between">
           <div>
@@ -79,6 +96,13 @@ export function App() {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Badge icon={<Bot size={16} />} text={`Provider: ${provider}`} />
+            <button
+              className="inline-flex items-center gap-2 border border-white/10 bg-steel px-3 py-1.5 hover:border-signal"
+              onClick={() => setSessionReady(false)}
+            >
+              <KeyRound size={16} />
+              Provider setup
+            </button>
             <Badge icon={<ShieldCheck size={16} />} text={offline ? "Static demo" : "API online"} />
             <Badge icon={<Clock3 size={16} />} text={`${active.usage.latency_ms} ms`} />
           </div>
@@ -213,6 +237,105 @@ function Badge({ icon, text }: { icon: React.ReactNode; text: string }) {
       {icon}
       {text}
     </span>
+  );
+}
+
+function ProviderGate({
+  session,
+  onChange,
+  onStart
+}: {
+  session: ProviderSession;
+  onChange: (session: ProviderSession) => void;
+  onStart: () => void;
+}) {
+  const needsKey = session.provider !== "mock";
+  const defaultModel =
+    session.provider === "openrouter" ? "openai/gpt-4o-mini" : "gpt-4o-mini";
+  const canStart = !needsKey || session.apiKey.trim().length > 8;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/95 px-4">
+      <section className="w-full max-w-2xl border border-white/10 bg-panel p-5 shadow-2xl">
+        <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+          <Bot className="text-signal" size={24} />
+          <div>
+            <p className="text-xs uppercase tracking-wider text-signal">FactoryOps AI Copilot</p>
+            <h2 className="text-xl font-semibold">Choose Runtime Provider</h2>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          {(["mock", "openai", "openrouter"] as ProviderSession["provider"][]).map((item) => (
+            <button
+              key={item}
+              className={`border p-4 text-left ${
+                session.provider === item ? "border-signal bg-signal/10" : "border-white/10"
+              }`}
+              onClick={() =>
+                onChange({
+                  provider: item,
+                  apiKey: item === "mock" ? "" : session.apiKey,
+                  model:
+                    item === "mock"
+                      ? ""
+                      : item === "openrouter"
+                        ? "openai/gpt-4o-mini"
+                        : "gpt-4o-mini"
+                })
+              }
+            >
+              <span className="block text-sm font-semibold uppercase">{item}</span>
+              <span className="mt-2 block text-xs leading-5 text-slate-400">
+                {item === "mock"
+                  ? "Deterministic, free, no API key."
+                  : "Uses your key for this browser session only."}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {needsKey && (
+          <div className="mt-5 grid gap-3 md:grid-cols-[1fr_0.7fr]">
+            <label className="block">
+              <span className="text-xs uppercase text-slate-400">API key</span>
+              <input
+                className="mt-2 w-full border border-white/10 bg-steel px-3 py-2 text-sm outline-none focus:border-signal"
+                type="password"
+                placeholder={
+                  session.provider === "openrouter" ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY"
+                }
+                value={session.apiKey}
+                onChange={(event) => onChange({ ...session, apiKey: event.target.value })}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs uppercase text-slate-400">Model</span>
+              <input
+                className="mt-2 w-full border border-white/10 bg-steel px-3 py-2 text-sm outline-none focus:border-signal"
+                value={session.model || defaultModel}
+                onChange={(event) => onChange({ ...session, model: event.target.value })}
+              />
+            </label>
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-5 text-slate-400">
+            Keys are sent only to the local backend for the selected run and are not stored in
+            SQLite, JSONL, git, or browser storage.
+          </p>
+          <button
+            className="inline-flex shrink-0 items-center justify-center gap-2 bg-signal px-4 py-2 text-sm font-semibold text-ink disabled:opacity-50"
+            disabled={!canStart}
+            onClick={onStart}
+          >
+            <Play size={16} />
+            Enter Dashboard
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
