@@ -64,3 +64,18 @@ def test_upload_csv_and_run_against_dataset():
     body = run.json()
     assert body["dataset_id"] == dataset["id"]
     assert "Uploaded Dataset" in body["answer_markdown"]
+
+
+def test_stream_mock_run_returns_tool_events():
+    response = client.post(
+        "/api/runs/stream",
+        json={
+            "prompt": "Why did Line A underperform yesterday?",
+            "provider": "mock",
+            "conversation_id": "test-thread",
+        },
+    )
+    assert response.status_code == 200
+    text = response.text
+    assert "tool_call" in text
+    assert "run_complete" in text

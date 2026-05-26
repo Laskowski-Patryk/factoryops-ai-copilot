@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import sqlite3
 from pathlib import Path
@@ -52,6 +54,14 @@ class RunRepository:
                 "SELECT payload FROM runs ORDER BY created_at DESC LIMIT 50"
             ).fetchall()
         return [RunResult.model_validate(json.loads(row["payload"])) for row in rows]
+
+    def list_by_conversation(self, conversation_id: str, limit: int = 8) -> list[RunResult]:
+        runs = [
+            run
+            for run in self.list()
+            if run.conversation_id and run.conversation_id == conversation_id
+        ]
+        return list(reversed(runs[:limit]))
 
     def get(self, run_id: str) -> RunResult | None:
         with self._connect() as conn:

@@ -172,4 +172,15 @@ def build_registry(dataset_service=None) -> ToolRegistry:
             ),
             dataset_service.query,
         )
+        registry.register(
+            ToolSpec(
+                name="run_python_analysis",
+                description=(
+                    "Run a restricted Python snippet over uploaded dataset rows. "
+                    "Set a variable named result."
+                ),
+                input_schema={"dataset_id": "str", "code": "str"},
+            ),
+            dataset_service.run_python_analysis,
+        )
     return registry

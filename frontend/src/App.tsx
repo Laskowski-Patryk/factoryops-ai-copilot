@@ -16,10 +16,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
-  createRun,
   fetchConfig,
   fetchDatasets,
   fetchRuns,
+  streamRun,
   type ProviderSession,
   uploadDataset
 } from "./api/client";
@@ -34,6 +34,7 @@ const prompts = [
 ];
 
 const SESSION_STORAGE_KEY = "factoryops-provider-session";
+const CONVERSATION_STORAGE_KEY = "factoryops-conversation-id";
 
 function loadStoredSession(): ProviderSession {
   try {
@@ -63,6 +64,14 @@ export function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
+  const [liveTrace, setLiveTrace] = useState<RunResult["tool_trace"]>([]);
+  const [conversationId] = useState(() => {
+    const existing = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    if (existing) return existing;
+    const next = crypto.randomUUID();
+    localStorage.setItem(CONVERSATION_STORAGE_KEY, next);
+    return next;
+  });
 
   const active = useMemo(
     () => runs.find((run) => run.id === activeId) ?? runs[0],
@@ -100,6 +109,10 @@ export function App() {
       setStatusMessage(
         `Dataset uploaded: ${dataset.name} (${dataset.row_count} rows, ${dataset.tables.length} table/s).`
       );
+      await runAnalysis(
+        "Create a dashboard and root-cause report from my uploaded dataset.",
+        dataset.id
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown upload error";
       setStatusMessage(`Run failed: ${message}`);
@@ -109,10 +122,25 @@ export function App() {
   }
 
   async function submitRun() {
+    await runAnalysis(prompt, selectedDatasetId || undefined);
+  }
+
+  async function runAnalysis(promptText: string, datasetId?: string) {
     setLoading(true);
+    setLiveTrace([]);
     setStatusMessage(`Running analysis with ${session.provider}...`);
     try {
-      const run = await createRun(prompt, session, selectedDatasetId);
+      const run = await streamRun(promptText, session, conversationId, datasetId, (event) => {
+        if (event.type === "status") setStatusMessage(event.message);
+        if (event.type === "tool_started") {
+          setStatusMessage(`Running tool: ${event.name}`);
+        }
+        if (event.type === "tool_call") {
+          setLiveTrace((current) => [...current, event.tool]);
+          setStatusMessage(`Tool completed: ${event.tool.name}`);
+        }
+        if (event.type === "error") setStatusMessage(`Run failed: ${event.message}`);
+      });
       setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
       setActiveId(run.id);
       setProvider(run.provider);
@@ -150,7 +178,8 @@ export function App() {
             <h1 className="mt-1 text-2xl font-semibold">Manufacturing Performance Triage</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge icon={<Bot size={16} />} text={`Provider: ${provider}`} />
+          <Badge icon={<Bot size={16} />} text={`Provider: ${provider}`} />
+          <Badge icon={<Database size={16} />} text={`Thread: ${conversationId.slice(0, 8)}`} />
             <button
               className="inline-flex items-center gap-2 border border-white/10 bg-steel px-3 py-1.5 hover:border-signal"
               onClick={() => setSessionReady(false)}
@@ -353,7 +382,7 @@ export function App() {
         <aside className="space-y-5">
           <Panel title="Tool Trace" icon={<Activity size={18} />}>
             <div className="space-y-3">
-              {active.tool_trace.map((tool, index) => (
+              {(loading && liveTrace.length ? liveTrace : active.tool_trace).map((tool, index) => (
                 <div key={`${tool.name}-${index}`} className="border-l-2 border-signal pl-3">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-sm font-semibold">{tool.name}</span>

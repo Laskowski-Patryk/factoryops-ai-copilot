@@ -1,4 +1,10 @@
+import json
+from queue import Queue
+from threading import Thread
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.agent.orchestrator import FactoryOpsAgent
 from app.core.config import Settings, get_settings
@@ -41,19 +47,70 @@ def create_run(
     dataset_service: DatasetService = Depends(get_dataset_service),
 ) -> RunResult:
     try:
+        if not request.conversation_id:
+            request = request.model_copy(update={"conversation_id": str(uuid4())})
+        history = repo.list_by_conversation(request.conversation_id)
         provider = build_provider_from_request(
             settings,
             request.provider,
             request.api_key,
             request.model,
         )
-        agent = FactoryOpsAgent(build_registry(dataset_service), provider)
+        agent = FactoryOpsAgent(build_registry(dataset_service), provider, history=history)
         return repo.save(agent.run(request))
     except Exception as exc:
         raise HTTPException(
             status_code=502,
             detail=f"Provider run failed: {exc}",
         ) from exc
+
+
+@router.post("/runs/stream")
+def stream_run(
+    request: RunRequest,
+    repo: RunRepository = Depends(get_repo),
+    settings: Settings = Depends(get_settings),
+    dataset_service: DatasetService = Depends(get_dataset_service),
+) -> StreamingResponse:
+    if not request.conversation_id:
+        request = request.model_copy(update={"conversation_id": str(uuid4())})
+
+    def event_stream():
+        queue: Queue[dict | None] = Queue()
+
+        def publish(event: dict) -> None:
+            queue.put(event)
+
+        def worker() -> None:
+            try:
+                publish({"type": "status", "message": "Starting FactoryOps agent"})
+                history = repo.list_by_conversation(request.conversation_id or "")
+                provider = build_provider_from_request(
+                    settings,
+                    request.provider,
+                    request.api_key,
+                    request.model,
+                )
+                agent = FactoryOpsAgent(
+                    build_registry(dataset_service),
+                    provider,
+                    history=history,
+                )
+                run = repo.save(agent.run(request, progress=publish))
+                publish({"type": "run_complete", "run": run.model_dump(mode="json")})
+            except Exception as exc:
+                publish({"type": "error", "message": f"Provider run failed: {exc}"})
+            finally:
+                queue.put(None)
+
+        Thread(target=worker, daemon=True).start()
+        while True:
+            event = queue.get()
+            if event is None:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.get("/runs", response_model=list[RunResult])

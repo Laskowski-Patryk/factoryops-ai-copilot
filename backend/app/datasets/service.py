@@ -16,6 +16,11 @@ from app.models.schemas import DatasetSummary
 from app.tools.factory_tools import assert_select_only
 
 MAX_ROWS_PER_SHEET = 10000
+BLOCKED_PYTHON = re.compile(
+    r"\b(import|open|exec|eval|compile|input|globals|locals|__import__)\b|__|"
+    r"\b(os|sys|subprocess|socket|requests|pathlib|shutil)\b",
+    re.I,
+)
 
 
 class DatasetService:
@@ -95,6 +100,29 @@ class DatasetService:
         with sqlite3.connect(self._db_path(dataset_id)) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(row) for row in conn.execute(sql).fetchmany(100)]
+
+    def run_python_analysis(self, dataset_id: str, code: str) -> dict:
+        if BLOCKED_PYTHON.search(code):
+            raise ValueError("Python analysis code contains blocked operations.")
+        profile = self.profile(dataset_id)
+        table = profile["tables"][0]["table"]
+        rows = self.query(dataset_id, f'SELECT * FROM "{table}" LIMIT 500')
+        namespace = {
+            "rows": rows,
+            "result": None,
+            "len": len,
+            "sum": sum,
+            "min": min,
+            "max": max,
+            "round": round,
+            "sorted": sorted,
+        }
+        exec(code, {"__builtins__": {}}, namespace)
+        return {
+            "table": table,
+            "rows_available": len(rows),
+            "result": namespace.get("result"),
+        }
 
     def infer_factory_metrics(self, dataset_id: str) -> dict:
         profile = self.profile(dataset_id)
