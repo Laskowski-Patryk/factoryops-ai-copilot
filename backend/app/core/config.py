@@ -21,9 +21,12 @@ class Settings(BaseSettings):
 
     @property
     def masked_provider_config(self) -> dict[str, str | bool]:
+        openrouter_configured = bool(
+            self.openrouter_api_key and not self.openrouter_api_key.startswith("your_")
+        )
         return {
             "provider": self.llm_provider,
-            "openrouter_configured": bool(self.openrouter_api_key),
+            "openrouter_configured": openrouter_configured,
             "openrouter_model": self.openrouter_model,
         }
 
